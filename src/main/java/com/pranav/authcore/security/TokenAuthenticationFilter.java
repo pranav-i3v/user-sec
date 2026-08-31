@@ -4,7 +4,6 @@ import com.pranav.authcore.dto.UserPermissionsDTO;
 import com.pranav.authcore.entity.RefreshToken;
 import com.pranav.authcore.entity.User;
 import com.pranav.authcore.repository.RefreshTokenRepository;
-import com.pranav.authcore.repository.UserRepository;
 import com.pranav.authcore.service.RbacService;
 import com.pranav.authcore.util.TokenUtils;
 import jakarta.servlet.FilterChain;
