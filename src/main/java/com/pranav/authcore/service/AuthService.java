@@ -3,8 +3,10 @@ package com.pranav.authcore.service;
 import com.pranav.authcore.dto.AuthResponse;
 import com.pranav.authcore.dto.LoginRequest;
 import com.pranav.authcore.dto.RefreshTokenRequest;
+import com.pranav.authcore.dto.RegisterRequest;
 import com.pranav.authcore.entity.*;
 import com.pranav.authcore.exception.AccountLockedException;
+import com.pranav.authcore.exception.AuthException;
 import com.pranav.authcore.exception.InvalidCredentialsException;
 import com.pranav.authcore.exception.InvalidTokenException;
 import com.pranav.authcore.exception.TokenReuseDetectedException;
@@ -28,6 +30,9 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final OrgMembershipRepository orgMembershipRepository;
+    private final OrganizationRepository organizationRepository;
+    private final RoleRepository roleRepository;
+    private final UserRoleRepository userRoleRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordUtils passwordUtils;
     private final TokenUtils tokenUtils;
@@ -216,4 +221,115 @@ public class AuthService {
 
         return membership.getOrganization();
     }
+
+    /**
+     * Register a new user with automatic "member" role assignment
+     */
+    @Transactional
+    public AuthResponse register(RegisterRequest request) {
+        // Validate email not already exists
+        if (userRepository.findByEmailAndDeletedAtIsNull(request.getEmail()).isPresent()) {
+            throw new AuthException("Email already registered");
+        }
+
+        // Hash password
+        String passwordHash = passwordUtils.hashPassword(request.getPassword());
+
+        // Create user (status: PENDING until email verified)
+        User user = User.builder()
+            .email(request.getEmail())
+            .passwordHash(passwordHash)
+            .status(User.UserStatus.ACTIVE) // Set to ACTIVE for immediate access
+            .mfaEnabled(false)
+            .failedLoginAttempts((short) 0)
+            .build();
+        user = userRepository.save(user);
+
+        Organization organization = null;
+        OrgMembership membership = null;
+
+        // Create org membership if orgId provided
+        if (request.getOrgId() != null) {
+            organization = organizationRepository.findById(request.getOrgId())
+                .orElseThrow(() -> new AuthException("Organization not found"));
+
+            membership = OrgMembership.builder()
+                .organization(organization)
+                .user(user)
+                .status(OrgMembership.MembershipStatus.ACTIVE)
+                .build();
+            membership = orgMembershipRepository.save(membership);
+
+            // Assign default "member" role automatically
+            assignDefaultMemberRole(membership, organization);
+        }
+
+        // Generate refresh token
+        String tokenValue = tokenUtils.generateSecureToken();
+        String tokenHash = tokenUtils.hashToken(tokenValue);
+        UUID familyId = UUID.randomUUID();
+
+        RefreshToken refreshToken = RefreshToken.builder()
+            .user(user)
+            .organization(organization)
+            .tokenHash(tokenHash)
+            .familyId(familyId)
+            .expiresAt(Instant.now().plus(Duration.ofHours(refreshTokenExpiryHours)))
+            .ipAddress(request.getIpAddress())
+            .userAgent(request.getUserAgent())
+            .build();
+        refreshTokenRepository.save(refreshToken);
+
+        // Audit log
+        auditService.logRegistrationSuccess(
+            user.getId(),
+            organization != null ? organization.getId() : null,
+            request.getIpAddress(),
+            request.getUserAgent()
+        );
+
+        log.info("User registered successfully: {}", user.getEmail());
+
+        return AuthResponse.builder()
+            .refreshToken(tokenValue)
+            .userId(user.getId())
+            .email(user.getEmail())
+            .orgId(organization != null ? organization.getId() : null)
+            .orgSlug(organization != null ? organization.getSlug() : null)
+            .refreshTokenExpiresAt(refreshToken.getExpiresAt())
+            .mfaEnabled(false)
+            .mfaRequired(false)
+            .build();
+    }
+
+    /**
+     * Assign default "member" role to newly registered user
+     */
+    private void assignDefaultMemberRole(OrgMembership membership, Organization organization) {
+        // Find or create "member" role for the organization
+        Role memberRole = roleRepository
+            .findByNameAndOrganization_Id("member", organization.getId())
+            .orElseGet(() -> {
+                // Create default member role if it doesn't exist
+                Role newRole = Role.builder()
+                    .organization(organization)
+                    .name("member")
+                    .description("Default member role")
+                    .isSystem(false)
+                    .build();
+                return roleRepository.save(newRole);
+            });
+
+        // Assign role to user
+        UserRole userRole = UserRole.builder()
+            .orgMembership(membership)
+            .role(memberRole)
+            .grantedBy(null) // System-assigned
+            .build();
+        userRoleRepository.save(userRole);
+
+        log.debug("Assigned 'member' role to user: {} in org: {}", 
+            membership.getUser().getEmail(), organization.getSlug());
+    }
 }
+

@@ -1,9 +1,10 @@
 package com.pranav.authcore.service;
-
+import com.pranav.authcore.repository.OrganizationRepository;
 import com.pranav.authcore.entity.AuthAuditLog;
 import com.pranav.authcore.entity.Organization;
 import com.pranav.authcore.entity.User;
 import com.pranav.authcore.repository.AuthAuditLogRepository;
+import com.pranav.authcore.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -11,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -18,6 +20,8 @@ import java.util.Map;
 public class AuditService {
 
     private final AuthAuditLogRepository auditLogRepository;
+    private final UserRepository userRepository;
+    private final OrganizationRepository organizationRepository;
 
     @Transactional
     public void logSuccessfulLogin(User user, Organization org, String ipAddress, String userAgent) {
@@ -150,4 +154,29 @@ public class AuditService {
 
         auditLogRepository.save(auditLog);
     }
+
+    @Transactional
+    public void logRegistrationSuccess(UUID userId, UUID orgId, String ipAddress, String userAgent) {
+        User user = userRepository.findById(userId).orElse(null);
+        Organization org = orgId != null ? organizationRepository.findById(orgId).orElse(null) : null;
+
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("userId", userId.toString());
+        if (orgId != null) {
+            metadata.put("orgId", orgId.toString());
+        }
+
+        AuthAuditLog auditLog = AuthAuditLog.builder()
+            .user(user)
+            .organization(org)
+            .eventType("REGISTRATION_SUCCESS")
+            .metadata(metadata)
+            .ipAddress(ipAddress)
+            .userAgent(userAgent)
+            .build();
+
+        auditLogRepository.save(auditLog);
+        log.info("User registered: userId={}, orgId={}", userId, orgId);
+    }
 }
+

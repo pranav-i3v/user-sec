@@ -58,9 +58,9 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
             
             filterChain.doFilter(request, response);
         } finally {
-            // Clean up ThreadLocal to prevent memory leaks
+            // Only clear RequestContext, NOT SecurityContext
+            // Spring Security manages SecurityContext lifecycle
             RequestContext.clear();
-            SecurityContextHolder.clearContext();
         }
     }
 

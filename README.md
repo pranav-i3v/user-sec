@@ -7,6 +7,7 @@ A production-grade Spring Boot **auto-configured** authentication and authorizat
 ## Features
 
 ### Authentication
+- ✅ **User Registration** with automatic "member" role assignment
 - ✅ Email/Password login with BCrypt hashing
 - ✅ Secure refresh token rotation with replay attack detection
 - ✅ Token family tracking for reuse detection
@@ -96,6 +97,12 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         AuthResponse response = authService.login(request);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/register")
+    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
+        AuthResponse response = authService.register(request);
         return ResponseEntity.ok(response);
     }
 
@@ -194,6 +201,7 @@ The filter will:
 ## Service Layer
 
 ### AuthService
+- `register(RegisterRequest)` - Register new user with automatic "member" role assignment
 - `login(LoginRequest)` - Authenticate user, generate refresh token
 - `refreshToken(RefreshTokenRequest)` - Rotate token, detect reuse
 - `logout(String refreshToken)` - Revoke token
