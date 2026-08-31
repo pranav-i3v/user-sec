@@ -184,12 +184,33 @@ public class OrderController {
 
 ### 7. Making Authenticated Requests
 
-From your client, include the refresh token in the Authorization header:
+**Login/Registration Flow:**
 
 ```bash
-curl -H "Authorization: Bearer <refresh-token>" \
+# Step 1: Login - Token returned in response header
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "password": "SecureP@ss123"}' \
+  -i
+
+# Response:
+# HTTP/1.1 200 OK
+# Authorization: Bearer eyJhbGc...
+# Content-Type: application/json
+# 
+# {"userId": "...", "email": "user@example.com", "orgId": "..."}
+
+# Step 2: Extract token from Authorization header and use for subsequent requests
+curl -H "Authorization: Bearer eyJhbGc..." \
      http://localhost:8080/api/orders
 ```
+
+**Key Points:**
+- ✅ Login/Register requests processed by **filter** (not controller)
+- ✅ Token returned in **Authorization response header** (not body)
+- ✅ Client extracts token from header
+- ✅ Client includes token in subsequent request headers
+- ✅ Professional approach - consistent with UsernamePasswordAuthenticationFilter pattern
 
 The filter will:
 1. ✅ Extract and validate token
@@ -299,12 +320,16 @@ This library uses Spring Boot auto-configuration (`@AutoConfiguration`) and is a
 - ✅ All 9 JPA entities
 - ✅ All 4 utility beans (`TokenUtils`, `PasswordUtils`, `PathMatcher`, `AuthConstants`)
 - ✅ Security configuration (`PasswordEncoder` bean)
-- ✅ **TokenAuthenticationFilter** - Automatically validates tokens on every request
+- ✅ **LoginAuthenticationFilter** - Handles login at filter level, returns token in header
+- ✅ **RegistrationFilter** - Handles registration at filter level, returns token in header
+- ✅ **TokenAuthenticationFilter** - Validates tokens on protected requests
 - ✅ **Spring Security Filter Chain** - Configured with stateless session management
 - ✅ Configuration properties (`AuthCoreProperties`)
 
 **Security Features Enabled:**
-- 🔒 All requests (except public endpoints) require valid token in `Authorization: Bearer <token>` header
+- 🔒 **Professional Filter-Based Auth** - Login/Registration handled at filter level (like UsernamePasswordAuthenticationFilter)
+- 🔒 **Token in Response Header** - `Authorization: Bearer <token>` returned in response header (not body)
+- 🔒 All protected requests require valid token in `Authorization: Bearer <token>` header
 - 🔒 Token validation: checks expiration, revocation status, user status
 - 🔒 SecurityContext automatically populated with user/org/permissions
 - 🔒 Method security enabled: Use `@PreAuthorize("hasAuthority('permission:code')")`

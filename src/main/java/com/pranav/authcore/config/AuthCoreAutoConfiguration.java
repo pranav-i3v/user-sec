@@ -3,8 +3,10 @@ package com.pranav.authcore.config;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Auto-configuration for Auth-Server-Core library.
@@ -25,6 +27,8 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 @EnableConfigurationProperties(AuthCoreProperties.class)
 public class AuthCoreAutoConfiguration {
     
-    // All beans in com.pranav.authcore package will be auto-discovered
-    // Services, Repositories, Utilities, Exceptions are automatically registered
+    @Bean
+    public ObjectMapper objectMapper() {
+        return new ObjectMapper();
+    }
 }

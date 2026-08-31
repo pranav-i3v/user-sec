@@ -1,5 +1,7 @@
 package com.pranav.authcore.config;
 
+import com.pranav.authcore.security.LoginAuthenticationFilter;
+import com.pranav.authcore.security.RegistrationFilter;
 import com.pranav.authcore.security.TokenAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -21,6 +23,8 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final TokenAuthenticationFilter tokenAuthenticationFilter;
+    private final LoginAuthenticationFilter loginAuthenticationFilter;
+    private final RegistrationFilter registrationFilter;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -46,7 +50,9 @@ public class SecurityConfig {
                 // All other requests require authentication
                 .anyRequest().authenticated()
             )
-            // Add token authentication filter before UsernamePasswordAuthenticationFilter
+            // Add filters in order: Login/Register → Token validation
+            .addFilterBefore(loginAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(registrationFilter, UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(tokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
