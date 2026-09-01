@@ -1,8 +1,7 @@
-package com.pranav.authcore.security;
+package com.pranav.authcore.security.filter;
 
-import com.pranav.authcore.dto.AuthResponse;
 import com.pranav.authcore.dto.RegisterRequest;
-import com.pranav.authcore.service.AuthService;
+import com.pranav.authcore.security.token.RegistrationAuthenticationToken;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -10,6 +9,9 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import tools.jackson.databind.ObjectMapper;
@@ -17,7 +19,8 @@ import tools.jackson.databind.ObjectMapper;
 import java.io.IOException;
 
 /**
- * Registration Filter - Handles registration at filter level.
+ * Registration Filter - Handles registration at filter level using Spring Security pattern.
+ * Uses AuthenticationManager → RegistrationAuthenticationProvider for validation.
  * Sets token in response header instead of body.
  */
 @Component
@@ -25,7 +28,7 @@ import java.io.IOException;
 @Slf4j
 public class RegistrationFilter extends OncePerRequestFilter {
 
-    private final AuthService authService;
+    private final AuthenticationManager authenticationManager;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -56,19 +59,37 @@ public class RegistrationFilter extends OncePerRequestFilter {
             registerRequest.setIpAddress(request.getRemoteAddr());
             registerRequest.setUserAgent(request.getHeader("User-Agent"));
 
-            // Register and generate token
-            AuthResponse authResponse = authService.register(registerRequest);
+            // Create unauthenticated token
+            RegistrationAuthenticationToken unauthenticated = new RegistrationAuthenticationToken(
+                registerRequest.getEmail(),
+                registerRequest.getPassword(),
+                registerRequest.getOrgId()
+            );
+
+            // Authenticate via AuthenticationManager → RegistrationAuthenticationProvider
+            Authentication authenticated = authenticationManager.authenticate(unauthenticated);
+            RegistrationAuthenticationToken authToken = (RegistrationAuthenticationToken) authenticated;
+
+            // Set authenticated token in SecurityContext
+            SecurityContextHolder.getContext().setAuthentication(authenticated);
 
             // Set token in Authorization header
-            response.setHeader("Authorization", "Bearer " + authResponse.getRefreshToken());
+            response.setHeader("Authorization", "Bearer " + authToken.getRefreshToken());
 
             // Return user info in response body (without token)
-            authResponse.setRefreshToken(null); // Don't send token in body
             response.setContentType("application/json");
             response.setStatus(HttpServletResponse.SC_CREATED);
-            objectMapper.writeValue(response.getOutputStream(), authResponse);
+            
+            String jsonResponse = String.format(
+                "{\"userId\":\"%s\",\"email\":\"%s\",\"orgId\":%s,\"mfaEnabled\":%b}",
+                authToken.getUserId(),
+                authToken.getEmail(),
+                authToken.getOrgId() != null ? "\"" + authToken.getOrgId() + "\"" : "null",
+                false
+            );
+            response.getWriter().write(jsonResponse);
 
-            log.debug("Registration successful for user: {}", authResponse.getEmail());
+            log.info("Registration successful for user: {}", authToken.getEmail());
 
         } catch (Exception e) {
             log.error("Registration failed", e);

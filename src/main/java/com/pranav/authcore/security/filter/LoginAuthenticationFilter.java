@@ -1,8 +1,7 @@
-package com.pranav.authcore.security;
+package com.pranav.authcore.security.filter;
 
-import com.pranav.authcore.dto.AuthResponse;
 import com.pranav.authcore.dto.LoginRequest;
-import com.pranav.authcore.service.AuthService;
+import com.pranav.authcore.security.token.LoginAuthenticationToken;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -10,6 +9,9 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import tools.jackson.databind.ObjectMapper;
@@ -17,15 +19,15 @@ import tools.jackson.databind.ObjectMapper;
 import java.io.IOException;
 
 /**
- * Login Authentication Filter - Handles login at filter level.
- * Sets token in response header instead of body.
+ * Login Authentication Filter - Handles login at filter level using Spring Security pattern.
+ * Uses AuthenticationManager → LoginAuthenticationProvider for validation.
  */
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class LoginAuthenticationFilter extends OncePerRequestFilter {
 
-    private final AuthService authService;
+    private final AuthenticationManager authenticationManager;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -51,20 +53,41 @@ public class LoginAuthenticationFilter extends OncePerRequestFilter {
         try {
             // Parse login request
             LoginRequest loginRequest = objectMapper.readValue(request.getInputStream(), LoginRequest.class);
+            
+            // Set IP and user agent
+            loginRequest.setIpAddress(request.getRemoteAddr());
+            loginRequest.setUserAgent(request.getHeader("User-Agent"));
 
-            // Authenticate and generate token
-            AuthResponse authResponse = authService.login(loginRequest);
+            // Create unauthenticated token
+            LoginAuthenticationToken unauthenticated = new LoginAuthenticationToken(
+                loginRequest.getEmail(),
+                loginRequest.getPassword()
+            );
+
+            // Authenticate via AuthenticationManager → LoginAuthenticationProvider
+            Authentication authenticated = authenticationManager.authenticate(unauthenticated);
+            LoginAuthenticationToken authToken = (LoginAuthenticationToken) authenticated;
+
+            // Set authenticated token in SecurityContext
+            SecurityContextHolder.getContext().setAuthentication(authenticated);
 
             // Set token in Authorization header
-            response.setHeader("Authorization", "Bearer " + authResponse.getRefreshToken());
+            response.setHeader("Authorization", "Bearer " + authToken.getRefreshToken());
 
             // Return user info in response body (without token)
-            authResponse.setRefreshToken(null); // Don't send token in body
             response.setContentType("application/json");
             response.setStatus(HttpServletResponse.SC_OK);
-            objectMapper.writeValue(response.getOutputStream(), authResponse);
+            
+            String jsonResponse = String.format(
+                "{\"userId\":\"%s\",\"email\":\"%s\",\"orgId\":%s,\"mfaEnabled\":%b}",
+                authToken.getUserId(),
+                authToken.getEmail(),
+                authToken.getOrgId() != null ? "\"" + authToken.getOrgId() + "\"" : "null",
+                false
+            );
+            response.getWriter().write(jsonResponse);
 
-            log.debug("Login successful for user: {}", authResponse.getEmail());
+            log.info("Login successful for user: {}", authToken.getEmail());
 
         } catch (Exception e) {
             log.error("Login failed", e);
